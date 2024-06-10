@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+from irrp import IRRP
+import json
+import io
+import argparse
+
+
 FRAME0 = "0100000000000100000001110010000000000000000000000000000001100000"
 
 def encode_panasonic_aircon(
@@ -151,21 +157,56 @@ def encode_ir_signal(
             frame += [unit_time, unit_time * 20]
         return frame
 
-from irrp import IRRP
-import json
-import io
-
-LED_PIN = 17
-
-def ir_send(decoded_code: str):
+def ir_send(decoded_code: str, led_pin: int = 17):
     ir_code_json = io.StringIO(json.dumps({"ir_code": decoded_code}))
     ir_code_json = json.dumps({"ir_code": decoded_code})
     ir = IRRP(file="/dev/null", no_confirm=True)
-    ir.Playback(GPIO=LED_PIN, ID="ir_code", file_object=ir_code_json)
+    ir.Playback(GPIO=led_pin, ID="ir_code", file_object=ir_code_json)
     ir.stop()
 
-def main():
-    ir_send(encode_ir_signal("Panasonic", encode_panasonic_aircon("off", "cool", 28, "quiet", "1"), 425, 1))
+def control_aircon(
+    power: str,
+    mode: str,
+    temp: int,
+    led_pin: int = 17,
+    strength: str = "auto",
+    direction: str = "auto",
+    powerful: str = "off",
+    unit_time: int = 425,
+    repeat: int = 1
+):
+    encoded_hex = encode_panasonic_aircon(power, mode, temp, strength, direction, powerful)
+    ir_signal = encode_ir_signal("Panasonic", encoded_hex, unit_time, repeat)
+    ir_send(ir_signal, led_pin=led_pin)
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Generate and send Panasonic aircon IR signal.")
+    parser.add_argument("--power", type=str, required=True, help="Power state: on/off")
+    parser.add_argument("--mode", type=str, required=True, help="Mode: auto/fan/dry/cool/heat")
+    parser.add_argument("--temp", type=int, required=True, help="Temperature (16-30)")
+    parser.add_argument("--led_pin", type=int, default=17, help="GPIO pin for IR LED")
+    parser.add_argument("--strength", type=str, default="auto", help="Fan strength: 1(min)/2/3/4(max)/auto/quiet")
+    parser.add_argument("--direction", type=str, default="auto", help="Fan direction: 1(horizontal)/2/3/4/5(vertical)/auto")
+    parser.add_argument("--powerful", type=str, default="off", help="Powerful mode: on/off")
+    parser.add_argument("--unit_time", type=int, default=425, help="Unit time for IR signal")
+    parser.add_argument("--repeat", type=int, default=1, help="Number of times to repeat the signal")
+    parser.add_argument("--send", action="store_true", help="Send the generated IR signal")
+
+    args = parser.parse_args()
+
+    encoded_hex = encode_panasonic_aircon(
+        args.power,
+        args.mode,
+        args.temp,
+        args.strength,
+        args.direction,
+        args.powerful
+    )
+
+    ir_signal = encode_ir_signal("Panasonic", encoded_hex, args.unit_time, args.repeat)
+
+    if args.send:
+        ir_send(ir_signal, led_pin=args.led_pin)
+    else:
+        print("Generated IR Signal:", ir_signal)
